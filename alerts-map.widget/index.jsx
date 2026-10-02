@@ -141,33 +141,55 @@ export const className = `
   -webkit-font-smoothing: antialiased;
   color: #fff;
 
-  .w { width: 364px; height: 382px; box-sizing: border-box; padding: 16px 16px 12px; border-radius: 22px;
+  .w { width: 364px; height: 382px; box-sizing: border-box; padding: 16px 16px 12px; border-radius: 24px;
     display: flex; flex-direction: column; overflow: hidden; position: relative;
-    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.12), 0 6px 22px rgba(0,0,0,0.22);
-    transition: background .8s ease;
-    --off: rgba(255,255,255,0.22); --on: #ff453a; --on-part: rgba(255,120,110,0.75); --line: rgba(255,255,255,0.45); }
-  .w.day     { background: linear-gradient(180deg, #2f7bd6 0%, #4e9ae6 55%, #73b4ef 100%); }
-  .w.night   { background: linear-gradient(180deg, #0b1633 0%, #17284f 55%, #2a3d6b 100%); }
-  .w.partial { background: linear-gradient(180deg, #5b1d22 0%, #7e2a30 55%, #9a3a3f 100%); --on: #ff6b61; }
-  .w.alert   { background: linear-gradient(180deg, #4a0c12 0%, #6e131b 55%, #8f1d25 100%);
-               --off: rgba(255,255,255,0.16); --on: #ff453a; }
+    -webkit-backdrop-filter: blur(30px) saturate(190%) contrast(105%);
+    backdrop-filter: blur(30px) saturate(190%) contrast(105%);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.28),
+                inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.45),
+                inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.15);
+    transition: background .8s ease, border-color .8s ease;
+    --off: rgba(255, 255, 255, 0.24); --on: #ff453a; --on-part: rgba(255, 120, 110, 0.75); --line: rgba(255, 255, 255, 0.40); }
+  .w.day, .w.night {
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.04) 45%, rgba(255, 255, 255, 0.09) 100%),
+      radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.28) 0%, transparent 60%),
+      rgba(20, 24, 35, 0.15);
+  }
+  .w.partial {
+    background:
+      linear-gradient(135deg, rgba(255, 159, 10, 0.22) 0%, rgba(180, 70, 20, 0.08) 50%, rgba(255, 159, 10, 0.14) 100%),
+      radial-gradient(ellipse at 20% 0%, rgba(255, 159, 10, 0.30) 0%, transparent 60%),
+      rgba(35, 20, 10, 0.15);
+    border-color: rgba(255, 159, 10, 0.38);
+    --on: #ff6b61;
+  }
+  .w.alert {
+    background:
+      linear-gradient(135deg, rgba(255, 69, 58, 0.25) 0%, rgba(180, 20, 30, 0.10) 50%, rgba(255, 69, 58, 0.15) 100%),
+      radial-gradient(ellipse at 20% 0%, rgba(255, 69, 58, 0.35) 0%, transparent 60%),
+      rgba(40, 10, 15, 0.15);
+    border-color: rgba(255, 69, 58, 0.38);
+    --off: rgba(255, 255, 255, 0.18); --on: #ff453a;
+  }
 
   .top { display: flex; justify-content: space-between; align-items: flex-start; }
   .loc { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; display: flex; align-items: center;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+    text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
   .big { font-size: 40px; font-weight: 300; letter-spacing: -1px; line-height: 1.05; margin-top: 1px;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+    text-shadow: 0 2px 6px rgba(0,0,0,0.45); }
   .right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; padding-top: 2px; }
-  .ico { height: 22px; color: #fff; }
+  .ico { height: 22px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4)); }
   .alert .ico, .partial .ico { color: #ffd60a; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .45; } }
-  .cond { font-size: 13px; font-weight: 600; margin-top: 3px; }
-  .hl { font-size: 13px; font-weight: 500; opacity: .85; margin-top: 1px; }
+  .cond { font-size: 13px; font-weight: 600; margin-top: 3px; text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
+  .hl { font-size: 13px; font-weight: 500; opacity: .88; margin-top: 1px; text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
 
-  .map { width: 100%; flex: 1; min-height: 0; margin-top: 10px; display: block; }
+  .map { width: 100%; flex: 1; min-height: 0; margin-top: 10px; display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.25)); }
   .map path, .map circle { stroke: var(--line); stroke-width: 1; stroke-linejoin: round; transition: fill .5s ease; }
   .map .city { stroke: #fff; stroke-width: 1.6; }
   .map .home { fill: none; stroke: #fff; stroke-width: 2.6; }
 
-  .foot { font-size: 11px; font-weight: 500; opacity: .7; margin-top: 6px; }
+  .foot { font-size: 11px; font-weight: 500; opacity: .75; margin-top: 6px; text-shadow: 0 1px 2px rgba(0,0,0,0.45); }
 `
