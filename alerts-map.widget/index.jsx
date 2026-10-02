@@ -314,35 +314,32 @@ export const className = `
     pointer-events: auto;
     cursor: grab;
     user-select: none;
-    -webkit-backdrop-filter: blur(30px) saturate(190%) contrast(105%);
-    backdrop-filter: blur(30px) saturate(190%) contrast(105%);
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.28),
-                inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.45),
-                inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.15);
-    transition: background .8s ease, border-color .8s ease;
-    --off: rgba(255, 255, 255, 0.24); --on: #ff453a; --on-part: rgba(255, 120, 110, 0.75); --line: rgba(255, 255, 255, 0.40); }
+    -webkit-backdrop-filter: blur(40px) saturate(190%) contrast(105%);
+    backdrop-filter: blur(40px) saturate(190%) contrast(105%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.35),
+                inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.22),
+                inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.20);
+    transition: border-color .4s ease;
+    --off: rgba(255, 255, 255, 0.24); --on: #ff453a; --on-part: rgba(255, 120, 110, 0.75); --line: rgba(255, 255, 255, 0.35); }
   .w:active { cursor: grabbing; }
 
   .w.day, .w.night {
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.04) 45%, rgba(255, 255, 255, 0.09) 100%),
-      radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.28) 0%, transparent 60%),
-      rgba(20, 24, 35, 0.15);
+      linear-gradient(145deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(0, 0, 0, 0.12) 100%),
+      rgba(22, 26, 36, 0.65);
   }
   .w.partial {
     background:
-      linear-gradient(135deg, rgba(255, 159, 10, 0.22) 0%, rgba(180, 70, 20, 0.08) 50%, rgba(255, 159, 10, 0.14) 100%),
-      radial-gradient(ellipse at 20% 0%, rgba(255, 159, 10, 0.30) 0%, transparent 60%),
-      rgba(35, 20, 10, 0.15);
+      linear-gradient(145deg, rgba(255, 159, 10, 0.18) 0%, rgba(180, 70, 20, 0.06) 50%, rgba(0, 0, 0, 0.15) 100%),
+      rgba(35, 22, 18, 0.68);
     border-color: rgba(255, 159, 10, 0.38);
     --on: #ff6b61;
   }
   .w.alert {
     background:
-      linear-gradient(135deg, rgba(255, 69, 58, 0.25) 0%, rgba(180, 20, 30, 0.10) 50%, rgba(255, 69, 58, 0.15) 100%),
-      radial-gradient(ellipse at 20% 0%, rgba(255, 69, 58, 0.35) 0%, transparent 60%),
-      rgba(40, 10, 15, 0.15);
+      linear-gradient(145deg, rgba(255, 69, 58, 0.22) 0%, rgba(180, 20, 30, 0.08) 50%, rgba(0, 0, 0, 0.18) 100%),
+      rgba(38, 14, 18, 0.70);
     border-color: rgba(255, 69, 58, 0.38);
     --off: rgba(255, 255, 255, 0.18); --on: #ff453a;
   }
