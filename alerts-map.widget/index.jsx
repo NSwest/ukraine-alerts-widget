@@ -7,7 +7,10 @@
 const HOME = 'Львівська область'          // ваша область (підсвічується, статус угорі)
 const ALERTS_IN_UA_TOKEN = ''             // необов'язково: токен з alerts.in.ua/api-request
                                            // (дає тривоги по районах/громадах)
-const SCALE = 1                           // 1 = розмір великого віджета Apple; 1.25 — більший
+const DEFAULT_SCALE = 0.85                 // розмір за замовчуванням (85%)
+const DEFAULT_TOP = 40                     // відступ зверху за замовчуванням (px)
+const DEFAULT_RIGHT = 24                   // відступ справа за замовчуванням (px)
+const SCALE = DEFAULT_SCALE                           // 1 = розмір великого віджета Apple; 1.25 — більший
 const POSITION = 'top: 40px; right: 24px;'
 // ========================
 
