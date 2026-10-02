@@ -73,9 +73,20 @@ const Sun = () => (
 
 // ----- рендер -----
 
-// ===== ПЕРЕМІЩЕННЯ ТА ЗМІНА РОЗМІРУ =====
+
+// ===== ПЕРЕМІЩЕННЯ ТА РОЗМІРИ (APPLE WIDGET STANDARDS) =====
+// Розміри системних віджетів Apple у macOS:
+// S (Small): 170x170, радіус 28px
+// M (Medium): 364x170, радіус 28px
+// L (Large): 364x382, радіус 28px
+const WIDGET_SIZES = {
+  S: { w: 170, h: 170, radius: 28 },
+  M: { w: 364, h: 170, radius: 28 },
+  L: { w: 364, h: 382, radius: 28 }
+}
+
 let currentPos = null
-let currentScale = null
+let currentSize = null
 
 const getStoredPos = () => {
   if (currentPos) return currentPos
@@ -86,18 +97,18 @@ const getStoredPos = () => {
   return null
 }
 
-const getStoredScale = () => {
-  if (currentScale !== null) return currentScale
+const getStoredSize = () => {
+  if (currentSize) return currentSize
   try {
-    const s = localStorage.getItem('alerts_map_scale')
-    if (s) { currentScale = parseFloat(s); return currentScale }
+    const s = localStorage.getItem('alerts_map_size')
+    if (s && WIDGET_SIZES[s]) { currentSize = s; return currentSize }
   } catch (e) {}
-  return DEFAULT_SCALE
+  return 'S' // За замовчуванням маленький (Small 170x170), як у віджетів Погода і Календар
 }
 
 const onDragStart = (e) => {
   if (e.button !== 0) return
-  if (e.target.closest('button') || e.target.closest('.resize-handle') || e.target.closest('.no-drag')) return
+  if (e.target.closest('button') || e.target.closest('.no-drag')) return
 
   const el = e.currentTarget.closest('.w')
   if (!el) return
@@ -122,7 +133,6 @@ const onDragStart = (e) => {
     el.style.top = `${newTop}px`
     el.style.right = 'auto'
     el.style.bottom = 'auto'
-    el.style.transformOrigin = 'top left'
   }
 
   const onMouseUp = () => {
@@ -144,68 +154,37 @@ const onDragStart = (e) => {
   window.addEventListener('mouseup', onMouseUp)
 }
 
-const changeScale = (delta, el) => {
-  const current = currentScale !== null ? currentScale : getStoredScale()
-  const newScale = Math.max(0.5, Math.min(1.4, Math.round((current + delta) * 100) / 100))
-  currentScale = newScale
-  el.style.transform = `scale(${newScale})`
-  const label = el.querySelector('.scale-label')
-  if (label) label.textContent = `${Math.round(newScale * 100)}%`
+const setWidgetSize = (sizeKey, el) => {
+  if (!WIDGET_SIZES[sizeKey]) return
+  currentSize = sizeKey
   try {
-    localStorage.setItem('alerts_map_scale', String(newScale))
+    localStorage.setItem('alerts_map_size', sizeKey)
   } catch (err) {}
+  
+  // Оновлюємо класи віджета
+  el.classList.remove('size-S', 'size-M', 'size-L')
+  el.classList.add(`size-${sizeKey}`)
+  
+  // Оновлюємо активні кнопки
+  const btns = el.querySelectorAll('.size-btn')
+  btns.forEach(b => {
+    if (b.dataset.size === sizeKey) b.classList.add('active')
+    else b.classList.remove('active')
+  })
 }
 
 const resetWidget = (el) => {
   currentPos = null
-  currentScale = DEFAULT_SCALE
+  currentSize = 'S'
   try {
     localStorage.removeItem('alerts_map_pos')
-    localStorage.setItem('alerts_map_scale', String(DEFAULT_SCALE))
+    localStorage.setItem('alerts_map_size', 'S')
   } catch (err) {}
-  el.style.top = `${DEFAULT_TOP}px`
-  el.style.right = `${DEFAULT_RIGHT}px`
+  el.style.top = '40px'
+  el.style.right = '24px'
   el.style.left = 'auto'
   el.style.bottom = 'auto'
-  el.style.transform = `scale(${DEFAULT_SCALE})`
-  el.style.transformOrigin = 'top right'
-  const label = el.querySelector('.scale-label')
-  if (label) label.textContent = `${Math.round(DEFAULT_SCALE * 100)}%`
-}
-
-const onResizeStart = (e) => {
-  e.stopPropagation()
-  e.preventDefault()
-  const el = e.currentTarget.closest('.w')
-  if (!el) return
-
-  const startX = e.clientX
-  const startScale = currentScale !== null ? currentScale : getStoredScale()
-
-  document.body.style.userSelect = 'none'
-  document.body.style.cursor = 'nwse-resize'
-
-  const onMouseMove = (ev) => {
-    const dx = ev.clientX - startX
-    const newScale = Math.max(0.5, Math.min(1.4, Math.round((startScale + dx / 250) * 100) / 100))
-    currentScale = newScale
-    el.style.transform = `scale(${newScale})`
-    const label = el.querySelector('.scale-label')
-    if (label) label.textContent = `${Math.round(newScale * 100)}%`
-  }
-
-  const onMouseUp = () => {
-    window.removeEventListener('mousemove', onMouseMove)
-    window.removeEventListener('mouseup', onMouseUp)
-    document.body.style.userSelect = ''
-    document.body.style.cursor = ''
-    try {
-      localStorage.setItem('alerts_map_scale', String(currentScale))
-    } catch (err) {}
-  }
-
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup', onMouseUp)
+  setWidgetSize('S', el)
 }
 
 export const render = ({ output }) => {
@@ -245,17 +224,15 @@ export const render = ({ output }) => {
   const fill = name => S[name] === 'full' ? 'var(--on)' : S[name] === 'part' ? 'var(--on-part)' : 'var(--off)'
 
   const pos = getStoredPos()
-  const scale = getStoredScale()
+  const size = getStoredSize()
 
   const inlineStyle = {
-    top: pos ? `${pos.top}px` : `${DEFAULT_TOP}px`,
-    ...(pos && pos.left !== undefined ? { left: `${pos.left}px`, right: 'auto' } : { right: `${DEFAULT_RIGHT}px`, left: 'auto' }),
-    transform: `scale(${scale})`,
-    transformOrigin: (pos && pos.left !== undefined) ? 'top left' : 'top right'
+    top: pos ? `${pos.top}px` : '40px',
+    ...(pos && pos.left !== undefined ? { left: `${pos.left}px`, right: 'auto' } : { right: '24px', left: 'auto' })
   }
 
   return (
-    <div className={'w ' + bg} style={inlineStyle} onMouseDown={onDragStart} title="Затисніть ліву кнопку миші, щоб перемістити віджет">
+    <div className={`w ${bg} size-${size}`} style={inlineStyle} onMouseDown={onDragStart} title="Затисніть для переміщення">
       <div className="top drag-zone">
         <div>
           <div className="loc">{homeLabel}<Arrow /></div>
@@ -264,7 +241,7 @@ export const render = ({ output }) => {
         <div className="right">
           <div className="ico">{home ? <Siren /> : night ? <Moon /> : <Sun />}</div>
           <div className="cond">{home ? (homeSince ? `з ${hhmm(homeSince)}` : 'повітряна тривога') : 'тривоги немає'}</div>
-          <div className="hl">Тривог в Україні: {count}</div>
+          <div className="hl">Тривог: {count}</div>
         </div>
       </div>
 
@@ -278,20 +255,14 @@ export const render = ({ output }) => {
 
       <div className="foot no-drag">
         <span className="updated-text">
-          {ok ? `Оновлено о ${hhmmss(new Date())}` : lastGood ? `Немає зв'язку · дані на ${hhmm(lastGood.t)}` : "Немає зв'язку з сервером"}
+          {ok ? `Оновлено ${hhmm(new Date())}` : lastGood ? `Дані ${hhmm(lastGood.t)}` : "Немає зв'язку"}
         </span>
         <div className="controls">
-          <button className="glass-btn" title="Зменшити розмір" onClick={(e) => { e.stopPropagation(); changeScale(-0.05, e.currentTarget.closest('.w')) }}>−</button>
-          <span className="scale-label" title="Поточний масштаб">{Math.round(scale * 100)}%</span>
-          <button className="glass-btn" title="Збільшити розмір" onClick={(e) => { e.stopPropagation(); changeScale(0.05, e.currentTarget.closest('.w')) }}>+</button>
-          <button className="glass-btn" title="Скинути позицію та розмір" onClick={(e) => { e.stopPropagation(); resetWidget(e.currentTarget.closest('.w')) }}>↺</button>
+          <button className={`size-btn ${size === 'S' ? 'active' : ''}`} data-size="S" title="Маленький розмір (170x170, як Погода)" onClick={(e) => { e.stopPropagation(); setWidgetSize('S', e.currentTarget.closest('.w')) }}>S</button>
+          <button className={`size-btn ${size === 'M' ? 'active' : ''}`} data-size="M" title="Середній розмір (364x170)" onClick={(e) => { e.stopPropagation(); setWidgetSize('M', e.currentTarget.closest('.w')) }}>M</button>
+          <button className={`size-btn ${size === 'L' ? 'active' : ''}`} data-size="L" title="Великий розмір (364x382)" onClick={(e) => { e.stopPropagation(); setWidgetSize('L', e.currentTarget.closest('.w')) }}>L</button>
+          <button className="size-btn reset-btn" title="Скинути позицію" onClick={(e) => { e.stopPropagation(); resetWidget(e.currentTarget.closest('.w')) }}>↺</button>
         </div>
-      </div>
-
-      <div className="resize-handle no-drag" title="Потягніть для плавної зміни розміру" onMouseDown={onResizeStart}>
-        <svg viewBox="0 0 10 10">
-          <path d="M9 1 L1 9 M9 5 L5 9 M9 9 L9 9" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
       </div>
     </div>
   )
@@ -309,16 +280,22 @@ export const className = `
   color: #fff;
   z-index: 1000;
 
-    .w { width: 364px; height: 382px; box-sizing: border-box; padding: 16px 18px 14px; border-radius: 22px;
-    display: flex; flex-direction: column; overflow: hidden; position: fixed;
+  /* Точні характеристики системних віджетів macOS Sonoma / Sequoia */
+  .w {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: fixed;
     pointer-events: auto;
     cursor: grab;
     user-select: none;
-    background: rgba(43, 50, 60, 0.90);
+    background: #2b333c;
     -webkit-backdrop-filter: blur(25px);
     backdrop-filter: blur(25px);
-    border: 0.5px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 6px 20px 0 rgba(0, 0, 0, 0.22), 0 1px 3px 0 rgba(0, 0, 0, 0.12);
+    border-radius: 28px;
+    border: 0.5px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 4px 18px 0 rgba(0, 0, 0, 0.25), 0 1px 3px 0 rgba(0, 0, 0, 0.12);
     -webkit-transform: translate3d(0, 0, 0);
     transform: translate3d(0, 0, 0);
     -webkit-backface-visibility: hidden;
@@ -327,85 +304,122 @@ export const className = `
     will-change: transform;
     contain: paint;
     transition: none;
-    --off: rgba(255, 255, 255, 0.16); --on: #ff453a; --on-part: rgba(255, 69, 58, 0.65); --line: rgba(255, 255, 255, 0.18); }
+    --off: rgba(255, 255, 255, 0.18);
+    --on: #ff453a;
+    --on-part: rgba(255, 69, 58, 0.65);
+    --line: rgba(255, 255, 255, 0.20);
+  }
   .w:active { cursor: grabbing; }
 
+  /* Стандарти розмірів Apple */
+  /* S: точна копія віджета Погода/Календар (170x170, 28px) */
+  .w.size-S {
+    width: 170px;
+    height: 170px;
+    padding: 13px 13px 10px 13px;
+    border-radius: 28px;
+  }
+  .w.size-S .top { margin-bottom: 2px; }
+  .w.size-S .loc { font-size: 13px; font-weight: 600; }
+  .w.size-S .big { font-size: 22px; font-weight: 300; letter-spacing: -0.4px; line-height: 1.05; }
+  .w.size-S .cond { display: none; }
+  .w.size-S .hl { font-size: 10px; font-weight: 500; opacity: 0.75; margin-top: 1px; }
+  .w.size-S .ico { height: 16px; width: 16px; }
+  .w.size-S .ico svg { width: 16px; height: 16px; }
+  .w.size-S .map { flex: 1; min-height: 0; margin-top: 2px; margin-bottom: 2px; }
+  .w.size-S .foot { font-size: 9.5px; opacity: 0.65; margin-top: 0; }
+  .w.size-S .updated-text { max-width: 90px; }
+
+  /* M: середній віджет (364x170, 28px) */
+  .w.size-M {
+    width: 364px;
+    height: 170px;
+    padding: 14px 16px 10px 16px;
+    border-radius: 28px;
+  }
+  .w.size-M .loc { font-size: 14px; font-weight: 600; }
+  .w.size-M .big { font-size: 26px; font-weight: 300; }
+  .w.size-M .cond { font-size: 11px; opacity: 0.8; }
+  .w.size-M .hl { font-size: 11px; opacity: 0.75; }
+  .w.size-M .map { flex: 1; min-height: 0; margin-top: 4px; }
+  .w.size-M .foot { font-size: 10.5px; margin-top: 4px; }
+
+  /* L: великий віджет (364x382, 28px) */
+  .w.size-L {
+    width: 364px;
+    height: 382px;
+    padding: 16px 18px 14px 18px;
+    border-radius: 28px;
+  }
+  .w.size-L .loc { font-size: 15px; font-weight: 600; }
+  .w.size-L .big { font-size: 36px; font-weight: 300; }
+  .w.size-L .cond { font-size: 13px; }
+  .w.size-L .hl { font-size: 12px; }
+  .w.size-L .map { flex: 1; min-height: 0; margin-top: 10px; }
+  .w.size-L .foot { font-size: 11px; margin-top: 8px; }
+
+  /* Кольорові стани тривог */
   .w.day, .w.night {
-    background: rgba(43, 50, 60, 0.90);
+    background: #2b333c;
   }
   .w.partial {
-    background: rgba(52, 42, 44, 0.92);
+    background: #382c2e;
     border-color: rgba(255, 159, 10, 0.25);
     --on: #ff453a;
   }
   .w.alert {
-    background: rgba(56, 32, 36, 0.94);
+    background: #3e2428;
     border-color: rgba(255, 69, 58, 0.30);
-    --off: rgba(255, 255, 255, 0.14); --on: #ff453a;
+    --off: rgba(255, 255, 255, 0.14);
+    --on: #ff453a;
   }
 
   .top { display: flex; justify-content: space-between; align-items: flex-start; cursor: grab; }
-  .loc { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; display: flex; align-items: center; }
-  .big { font-size: 36px; font-weight: 300; letter-spacing: -0.8px; line-height: 1.08; margin-top: 2px; }
-  .right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; padding-top: 2px; }
-  .ico { height: 22px; color: #fff; }
+  .loc { letter-spacing: -0.2px; display: flex; align-items: center; }
+  .right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+  .ico { color: #fff; }
   .alert .ico, .partial .ico { color: #ffd60a; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .45; } }
-  .cond { font-size: 13px; font-weight: 600; margin-top: 3px; color: rgba(255, 255, 255, 0.85); }
-  .hl { font-size: 12px; font-weight: 400; opacity: .75; margin-top: 1px; color: rgba(255, 255, 255, 0.80); }
 
-  .map { width: 100%; flex: 1; min-height: 0; margin-top: 10px; display: block; pointer-events: none; }
+  .map { width: 100%; display: block; pointer-events: none; }
   .map path, .map circle { stroke: var(--line); stroke-width: 0.8; stroke-linejoin: round; }
-  .map .city { stroke: #fff; stroke-width: 1.5; }
-  .map .home { fill: none; stroke: #fff; stroke-width: 2.2; }
+  .map .city { stroke: #fff; stroke-width: 1.4; }
+  .map .home { fill: none; stroke: #fff; stroke-width: 2.0; }
 
-  .foot { font-size: 11px; font-weight: 400; opacity: .7; margin-top: 8px;
-    display: flex; justify-content: space-between; align-items: center; color: rgba(255, 255, 255, 0.7); }
-  .updated-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; }
+  .updated-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .controls { display: inline-flex; align-items: center; gap: 3px; opacity: 0; transition: opacity .2s ease; }
-  .w:hover .controls { opacity: 0.9; }
-  .scale-label { font-size: 10px; font-weight: 600; min-width: 28px; text-align: center; color: #fff; }
+  /* Кнопки перемикання розміру (з'являються при наведенні курсору) */
+  .controls { display: inline-flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .15s ease; }
+  .w:hover .controls { opacity: 0.95; }
 
-  .glass-btn {
+  .size-btn {
     background: rgba(255, 255, 255, 0.15);
     border: 0.5px solid rgba(255, 255, 255, 0.22);
     color: #fff;
     border-radius: 4px;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 9.5px;
+    font-weight: 700;
     line-height: 1;
     padding: 0;
     font-family: inherit;
-    transition: all .12s ease;
+    transition: all .1s ease;
     outline: none;
   }
-  .glass-btn:hover {
-    background: rgba(255, 255, 255, 0.30);
-    border-color: rgba(255, 255, 255, 0.40);
-    transform: scale(1.06);
+  .size-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    transform: scale(1.08);
   }
-  .glass-btn:active { transform: scale(0.94); }
-
-  .resize-handle {
-    position: absolute;
-    right: 3px;
-    bottom: 3px;
-    width: 16px;
-    height: 16px;
-    cursor: nwse-resize;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity .2s ease;
+  .size-btn.active {
+    background: #007aff;
+    border-color: #007aff;
+    color: #fff;
   }
-  .w:hover .resize-handle { opacity: 0.65; }
-  .resize-handle svg { width: 10px; height: 10px; }
+  .size-btn.reset-btn { font-size: 11px; }
 `
