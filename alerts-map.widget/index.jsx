@@ -69,6 +69,142 @@ const Sun = () => (
 )
 
 // ----- рендер -----
+
+// ===== ПЕРЕМІЩЕННЯ ТА ЗМІНА РОЗМІРУ =====
+let currentPos = null
+let currentScale = null
+
+const getStoredPos = () => {
+  if (currentPos) return currentPos
+  try {
+    const s = localStorage.getItem('alerts_map_pos')
+    if (s) { currentPos = JSON.parse(s); return currentPos }
+  } catch (e) {}
+  return null
+}
+
+const getStoredScale = () => {
+  if (currentScale !== null) return currentScale
+  try {
+    const s = localStorage.getItem('alerts_map_scale')
+    if (s) { currentScale = parseFloat(s); return currentScale }
+  } catch (e) {}
+  return DEFAULT_SCALE
+}
+
+const onDragStart = (e) => {
+  if (e.button !== 0) return
+  if (e.target.closest('button') || e.target.closest('.resize-handle') || e.target.closest('.no-drag')) return
+
+  const el = e.currentTarget.closest('.w')
+  if (!el) return
+
+  const rect = el.getBoundingClientRect()
+  const startX = e.clientX
+  const startY = e.clientY
+  const startLeft = rect.left
+  const startTop = rect.top
+
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'grabbing'
+  el.style.cursor = 'grabbing'
+
+  const onMouseMove = (ev) => {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    const newLeft = Math.max(0, Math.min(window.innerWidth - 60, startLeft + dx))
+    const newTop = Math.max(0, Math.min(window.innerHeight - 60, startTop + dy))
+
+    el.style.left = `${newLeft}px`
+    el.style.top = `${newTop}px`
+    el.style.right = 'auto'
+    el.style.bottom = 'auto'
+    el.style.transformOrigin = 'top left'
+  }
+
+  const onMouseUp = () => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    el.style.cursor = ''
+
+    const finalRect = el.getBoundingClientRect()
+    const pos = { left: Math.round(finalRect.left), top: Math.round(finalRect.top) }
+    currentPos = pos
+    try {
+      localStorage.setItem('alerts_map_pos', JSON.stringify(pos))
+    } catch (err) {}
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+const changeScale = (delta, el) => {
+  const current = currentScale !== null ? currentScale : getStoredScale()
+  const newScale = Math.max(0.5, Math.min(1.4, Math.round((current + delta) * 100) / 100))
+  currentScale = newScale
+  el.style.transform = `scale(${newScale})`
+  const label = el.querySelector('.scale-label')
+  if (label) label.textContent = `${Math.round(newScale * 100)}%`
+  try {
+    localStorage.setItem('alerts_map_scale', String(newScale))
+  } catch (err) {}
+}
+
+const resetWidget = (el) => {
+  currentPos = null
+  currentScale = DEFAULT_SCALE
+  try {
+    localStorage.removeItem('alerts_map_pos')
+    localStorage.setItem('alerts_map_scale', String(DEFAULT_SCALE))
+  } catch (err) {}
+  el.style.top = `${DEFAULT_TOP}px`
+  el.style.right = `${DEFAULT_RIGHT}px`
+  el.style.left = 'auto'
+  el.style.bottom = 'auto'
+  el.style.transform = `scale(${DEFAULT_SCALE})`
+  el.style.transformOrigin = 'top right'
+  const label = el.querySelector('.scale-label')
+  if (label) label.textContent = `${Math.round(DEFAULT_SCALE * 100)}%`
+}
+
+const onResizeStart = (e) => {
+  e.stopPropagation()
+  e.preventDefault()
+  const el = e.currentTarget.closest('.w')
+  if (!el) return
+
+  const startX = e.clientX
+  const startScale = currentScale !== null ? currentScale : getStoredScale()
+
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'nwse-resize'
+
+  const onMouseMove = (ev) => {
+    const dx = ev.clientX - startX
+    const newScale = Math.max(0.5, Math.min(1.4, Math.round((startScale + dx / 250) * 100) / 100))
+    currentScale = newScale
+    el.style.transform = `scale(${newScale})`
+    const label = el.querySelector('.scale-label')
+    if (label) label.textContent = `${Math.round(newScale * 100)}%`
+  }
+
+  const onMouseUp = () => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    try {
+      localStorage.setItem('alerts_map_scale', String(currentScale))
+    } catch (err) {}
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
 export const render = ({ output }) => {
   const out = output || ''
   let ub = tryJSON(section(out, 'ALERTS') || '')
@@ -105,9 +241,19 @@ export const render = ({ output }) => {
 
   const fill = name => S[name] === 'full' ? 'var(--on)' : S[name] === 'part' ? 'var(--on-part)' : 'var(--off)'
 
+  const pos = getStoredPos()
+  const scale = getStoredScale()
+
+  const inlineStyle = {
+    top: pos ? `${pos.top}px` : `${DEFAULT_TOP}px`,
+    ...(pos && pos.left !== undefined ? { left: `${pos.left}px`, right: 'auto' } : { right: `${DEFAULT_RIGHT}px`, left: 'auto' }),
+    transform: `scale(${scale})`,
+    transformOrigin: (pos && pos.left !== undefined) ? 'top left' : 'top right'
+  }
+
   return (
-    <div className={'w ' + bg}>
-      <div className="top">
+    <div className={'w ' + bg} style={inlineStyle} onMouseDown={onDragStart} title="Затисніть ліву кнопку миші, щоб перемістити віджет">
+      <div className="top drag-zone">
         <div>
           <div className="loc">{homeLabel}<Arrow /></div>
           <div className="big">{home === 'full' ? 'Тривога' : home === 'part' ? 'Частково' : 'Тиша'}</div>
@@ -127,22 +273,44 @@ export const render = ({ output }) => {
         {MAP.regions[HOME] && MAP.regions[HOME].d && <path d={MAP.regions[HOME].d} className="home" />}
       </svg>
 
-      <div className="foot">
-        {ok ? `Оновлено о ${hhmmss(new Date())}` : lastGood ? `Немає зв'язку · дані на ${hhmm(lastGood.t)}` : 'Немає зв\'язку з сервером'}
+      <div className="foot no-drag">
+        <span className="updated-text">
+          {ok ? `Оновлено о ${hhmmss(new Date())}` : lastGood ? `Немає зв'язку · дані на ${hhmm(lastGood.t)}` : "Немає зв'язку з сервером"}
+        </span>
+        <div className="controls">
+          <button className="glass-btn" title="Зменшити розмір" onClick={(e) => { e.stopPropagation(); changeScale(-0.05, e.currentTarget.closest('.w')) }}>−</button>
+          <span className="scale-label" title="Поточний масштаб">{Math.round(scale * 100)}%</span>
+          <button className="glass-btn" title="Збільшити розмір" onClick={(e) => { e.stopPropagation(); changeScale(0.05, e.currentTarget.closest('.w')) }}>+</button>
+          <button className="glass-btn" title="Скинути позицію та розмір" onClick={(e) => { e.stopPropagation(); resetWidget(e.currentTarget.closest('.w')) }}>↺</button>
+        </div>
+      </div>
+
+      <div className="resize-handle no-drag" title="Потягніть для плавної зміни розміру" onMouseDown={onResizeStart}>
+        <svg viewBox="0 0 10 10">
+          <path d="M9 1 L1 9 M9 5 L5 9 M9 9 L9 9" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
       </div>
     </div>
   )
 }
 
 export const className = `
-  ${POSITION}
-  zoom: ${SCALE};
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   color: #fff;
+  z-index: 1000;
 
   .w { width: 364px; height: 382px; box-sizing: border-box; padding: 16px 16px 12px; border-radius: 24px;
-    display: flex; flex-direction: column; overflow: hidden; position: relative;
+    display: flex; flex-direction: column; overflow: hidden; position: fixed;
+    pointer-events: auto;
+    cursor: grab;
+    user-select: none;
     -webkit-backdrop-filter: blur(30px) saturate(190%) contrast(105%);
     backdrop-filter: blur(30px) saturate(190%) contrast(105%);
     border: 1px solid rgba(255, 255, 255, 0.24);
@@ -151,6 +319,8 @@ export const className = `
                 inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.15);
     transition: background .8s ease, border-color .8s ease;
     --off: rgba(255, 255, 255, 0.24); --on: #ff453a; --on-part: rgba(255, 120, 110, 0.75); --line: rgba(255, 255, 255, 0.40); }
+  .w:active { cursor: grabbing; }
+
   .w.day, .w.night {
     background:
       linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.04) 45%, rgba(255, 255, 255, 0.09) 100%),
@@ -174,7 +344,7 @@ export const className = `
     --off: rgba(255, 255, 255, 0.18); --on: #ff453a;
   }
 
-  .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .top { display: flex; justify-content: space-between; align-items: flex-start; cursor: grab; }
   .loc { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; display: flex; align-items: center;
     text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
   .big { font-size: 40px; font-weight: 300; letter-spacing: -1px; line-height: 1.05; margin-top: 1px;
@@ -186,10 +356,58 @@ export const className = `
   .cond { font-size: 13px; font-weight: 600; margin-top: 3px; text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
   .hl { font-size: 13px; font-weight: 500; opacity: .88; margin-top: 1px; text-shadow: 0 1px 3px rgba(0,0,0,0.45); }
 
-  .map { width: 100%; flex: 1; min-height: 0; margin-top: 10px; display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.25)); }
+  .map { width: 100%; flex: 1; min-height: 0; margin-top: 10px; display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.25)); pointer-events: none; }
   .map path, .map circle { stroke: var(--line); stroke-width: 1; stroke-linejoin: round; transition: fill .5s ease; }
   .map .city { stroke: #fff; stroke-width: 1.6; }
   .map .home { fill: none; stroke: #fff; stroke-width: 2.6; }
 
-  .foot { font-size: 11px; font-weight: 500; opacity: .75; margin-top: 6px; text-shadow: 0 1px 2px rgba(0,0,0,0.45); }
+  .foot { font-size: 11px; font-weight: 500; opacity: .85; margin-top: 6px; text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+    display: flex; justify-content: space-between; align-items: center; }
+  .updated-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+
+  .controls { display: inline-flex; align-items: center; gap: 3px; opacity: 0.55; transition: opacity .2s ease; }
+  .w:hover .controls { opacity: 1; }
+  .scale-label { font-size: 10px; font-weight: 600; min-width: 28px; text-align: center; opacity: 0.9; }
+
+  .glass-btn {
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    color: #fff;
+    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0;
+    font-family: inherit;
+    transition: all .15s ease;
+    outline: none;
+  }
+  .glass-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: scale(1.08);
+  }
+  .glass-btn:active { transform: scale(0.92); }
+
+  .resize-handle {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.4;
+    transition: opacity .2s ease;
+  }
+  .w:hover .resize-handle { opacity: 0.85; }
+  .resize-handle svg { width: 10px; height: 10px; }
 `
