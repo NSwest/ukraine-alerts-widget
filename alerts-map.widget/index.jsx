@@ -13,7 +13,7 @@ const ALERTS_IN_UA_TOKEN = ''        // токен з https://alerts.in.ua/api-r
 const CHANNELS = ['kpszsu', 'eRadarrua', 'war_monitor']  // публічні Telegram-канали моніторингу
 const THREAT_MINUTES = 30            // скільки хвилин показувати ціль після останньої згадки
 const TG_CACHE_SECONDS = 30          // як часто перечитувати Telegram (секунди)
-const DEFAULT_SIZE = 'L'             // M, L або XL
+const DEFAULT_SIZE = 'S'             // S, M, L або XL
 // ========================
 
 export const refreshFrequency = 10 * 1000   // 10 секунд
@@ -281,7 +281,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('ua_alerts_' + k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem('ua_alerts_' + k, JSON.stringify(v)) } catch (e) {} },
 }
-const SIZES = { M: 480, L: 680, XL: 900 }
+const SIZES = { S: 340, M: 480, L: 680, XL: 900 }
 
 const onDragStart = e => {
   if (e.button !== 0 || e.target.closest('button')) return
@@ -295,8 +295,9 @@ const onDragStart = e => {
   window.addEventListener('mousemove', mv); window.addEventListener('mouseup', upF)
 }
 const setSize = (k, e) => {
-  e.stopPropagation(); store.set('size', k)
+  e.stopPropagation(); store.set('size2', k)
   const el = e.currentTarget.closest('.card'); el.style.width = SIZES[k] + 'px'
+  Object.keys(SIZES).forEach(x => el.classList.toggle('sz-' + x, x === k))
   el.querySelectorAll('.sz').forEach(b => b.classList.toggle('on', b.dataset.k === k))
 }
 const resetPos = e => {
@@ -342,8 +343,8 @@ export const render = ({ output }) => {
   targets.forEach(t => { byKind[t.kind] = (byKind[t.kind] || 0) + t.n })
 
   const pos = store.get('pos', null)
-  const size = store.get('size', DEFAULT_SIZE)
-  const style = { width: (SIZES[size] || SIZES.L) + 'px', top: (pos ? pos.top : 40) + 'px' }
+  const size = store.get('size2', DEFAULT_SIZE)
+  const style = { width: (SIZES[size] || SIZES.S) + 'px', top: (pos ? pos.top : 40) + 'px' }
   if (pos) { style.left = pos.left + 'px'; style.right = 'auto' } else style.right = '24px'
 
   const cls = homeObl === 'R' ? 'red' : homeObl === 'Y' ? 'yellow' : homePart ? 'part' : homeThreat.length ? 'watch' : 'calm'
@@ -361,7 +362,7 @@ export const render = ({ output }) => {
   })
 
   return (
-    <div className={'card ' + cls} style={style} onMouseDown={onDragStart}>
+    <div className={'card ' + cls + ' sz-' + size} style={style} onMouseDown={onDragStart}>
       <div className="head">
         <div>
           <div className="loc">{HOME_LABEL}</div>
@@ -394,8 +395,8 @@ export const render = ({ output }) => {
             return (
               <g key={i} transform={`translate(${t.xy[0]} ${t.xy[1]})`} opacity={op} className={'tg ' + t.kind}>
                 <title>{`${KINDS[t.kind].label}: ${t.place} · ${hhmm(t.t)} (@${t.ch})\n${t.text}`}</title>
-                {t.head == null ? <circle r="15" className="halo" /> : null}
-                <g transform={`rotate(${t.head == null ? 0 : t.head}) scale(1.55)`}><path d={ICON[t.kind]} /></g>
+                {t.head == null ? <circle r={size === 'S' ? 22 : 15} className="halo" /> : null}
+                <g transform={`rotate(${t.head == null ? 0 : t.head}) scale(${size === 'S' ? 2.3 : 1.55})`}><path d={ICON[t.kind]} /></g>
                 {t.n > 1 ? <text x="13" y="-9" className="n">{t.n}</text> : null}
               </g>
             )
@@ -479,4 +480,18 @@ export const className = `
   .sz { font: 600 10px -apple-system, sans-serif; color: #dfe5ee; background: rgba(255,255,255,0.1);
     border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; padding: 1px 5px; cursor: pointer; }
   .sz.on { background: rgba(255,255,255,0.3); }
+  .card.sz-S { padding: 10px 11px 8px; border-radius: 18px; }
+  .sz-S .head { margin-bottom: 2px; gap: 6px; }
+  .sz-S .loc { font-size: 11px; }
+  .sz-S .status { font-size: 15px; }
+  .sz-S .since { font-size: 11px; }
+  .sz-S .sum { font-size: 10px; line-height: 1.35; }
+  .sz-S .labels text { font-size: 20px; stroke-width: 4px; }
+  .sz-S .labels text.city { display: none; }
+  .sz-S .threats { gap: 4px; margin: 4px 0; }
+  .sz-S .chip { font-size: 10px; padding: 2px 7px; }
+  .sz-S .foot { font-size: 9.5px; }
+  .sz-S .foot > span:first-child { display: none; }
+  .sz-S .foot { justify-content: flex-end; }
+  .sz-S .tg .n { font-size: 20px; }
 `
