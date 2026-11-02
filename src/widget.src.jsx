@@ -8,8 +8,11 @@
 
 // ===== НАЛАШТУВАННЯ =====
 const HOME = 'Львівська область'     // ваша область: підсвічена, її статус у заголовку
-const ALERTS_IN_UA_TOKEN = ''        // токен з https://alerts.in.ua/api-request — дає жовтий/червоний рівні,
-                                     // тривоги по районах і громадах та типи загроз. Без нього — лише області.
+// Основне джерело — API alerts.in.ua (жовтий/червоний рівні, райони, громади, міста, типи загроз).
+// Токен НЕ пишіть у цей файл: він зберігається окремо в ~/.config/ua-alerts/token
+// (див. tools/setup.command). Без токена віджет працює з резервним джерелом — лише області.
+const TOKEN_FILE = '$HOME/.config/ua-alerts/token'
+const API_MIN_SECONDS = 8            // не частіше одного запиту до alerts.in.ua за 8 с (ліміт API — 8–10/хв)
 const CHANNELS = ['kpszsu', 'eRadarrua', 'war_monitor']  // публічні Telegram-канали моніторингу
 const THREAT_MINUTES = 30            // скільки хвилин показувати ціль після останньої згадки
 const TG_CACHE_SECONDS = 30          // як часто перечитувати Telegram (секунди)
@@ -24,11 +27,22 @@ const tgCmd = c => `f="/tmp/ua-alerts-tg-${c}.html"; ` +
   `curl -s -m 8 -A '${UA}' 'https://t.me/s/${c}' -o "$f.tmp" && mv "$f.tmp" "$f"; fi; ` +
   `echo '###TG ${c}'; tr '\\n' ' ' < "$f" | grep -o '<div class="tgme_widget_message_wrap.*'; echo`
 
+// alerts.in.ua: кеш у /tmp, умовний запит If-Modified-Since (curl -z), щоб не перевантажувати API
+const apiCmd = `T=$(tr -d '[:space:]' 2>/dev/null < "${TOKEN_FILE}"); ` +
+  `if [ -n "$T" ]; then D=/tmp/ua-alerts-api; mkdir -p "$D"; f="$D/active.json"; s="$D/stamp"; ` +
+  `age=$(( $(date +%s) - $(stat -f %m "$s" 2>/dev/null || echo 0) )); ` +
+  `if [ "$age" -ge ${API_MIN_SECONDS} ]; then touch "$s"; ` +
+  `if [ -s "$f" ]; then Z="-z $f"; else Z=""; fi; ` +
+  `c=$(curl -s -m 8 -R $Z -o "$f.new" -w '%{http_code}' -H "Authorization: Bearer $T" -H 'Accept: application/json' ` +
+  `'https://api.alerts.in.ua/v1/alerts/active.json'); ` +
+  `if [ "$c" = 200 ] && [ -s "$f.new" ]; then mv "$f.new" "$f"; else rm -f "$f.new"; fi; echo "$c" > "$D/code"; fi; ` +
+  `c=$(cat "$D/code" 2>/dev/null); echo "###STATUS $c"; ` +
+  `if [ "$c" = 200 ] || [ "$c" = 304 ]; then echo '###DETAIL'; cat "$f" 2>/dev/null; echo; fi; ` +
+  `else echo '###STATUS notoken'; fi`
+
 export const command = [
   `echo '###ALERTS'; curl -s -m 8 'https://ubilling.net.ua/aerialalerts/'; echo`,
-  ALERTS_IN_UA_TOKEN
-    ? `echo '###DETAIL'; curl -s -m 8 -H 'Authorization: Bearer ${ALERTS_IN_UA_TOKEN}' 'https://api.alerts.in.ua/v1/alerts/active.json'; echo`
-    : '',
+  apiCmd,
   ...CHANNELS.map(tgCmd),
 ].filter(Boolean).join('; ')
 
@@ -314,7 +328,11 @@ const hhmm = d => d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-di
 export const render = ({ output }) => {
   const out = output || ''
   const ub = tryJSON(section(out, 'ALERTS') || '')
-  const det = ALERTS_IN_UA_TOKEN ? tryJSON(section(out, 'DETAIL') || '') : null
+  const det = tryJSON(section(out, 'DETAIL') || '')
+  const stm = out.match(/###STATUS (\S*)/)
+  const apiStatus = stm ? stm[1] : 'notoken'
+  const apiProblem = apiStatus === 'notoken' ? null : apiStatus === '401' || apiStatus === '403' ? 'alerts.in.ua: токен недійсний'
+    : apiStatus === '429' ? 'alerts.in.ua: забагато запитів' : (apiStatus !== '200' && apiStatus !== '304') ? "alerts.in.ua недоступний (" + (apiStatus || '—') + ')' : null
   let A = parseAlerts(ub, det)
   if (A.mode) lastGood = { A, t: new Date() }
   else if (lastGood) A = lastGood.A
@@ -365,7 +383,7 @@ export const render = ({ output }) => {
       <div className="head">
         <div>
           <div className="loc">{HOME_LABEL}</div>
-          <div className="status">{statusText}{homeSince ? <span className="since"> з {hhmm(homeSince)}</span> : null}</div>
+          <div className="status">{size === 'S' ? statusText.replace('Тривога в частині області', 'Тривога частково').replace('Загроза (жовтий рівень)', 'Жовтий рівень').replace('Ціль у вашій області', 'Ціль поруч') : statusText}{homeSince ? <span className="since"> з {hhmm(homeSince)}</span> : null}</div>
         </div>
         <div className="sum">
           <div>Областей з тривогою: <b>{affected.length}</b></div>
@@ -409,14 +427,15 @@ export const render = ({ output }) => {
           : <span className="chip calmchip">Активних загроз у моніторингу немає</span>}
       </div>
 
+      {apiProblem ? <div className="apiwarn">⚠︎ {apiProblem}{A.mode === 'oblast' ? ' — показую лише області' : ''}</div> : null}
       <div className="foot">
         <span>
           <i className="lg" style={{ background: 'var(--red)' }} />тривога
           <i className="lg" style={{ background: 'var(--yellow)' }} />дрони (жовтий)
-          {A.mode !== 'detail' ? <span className="hint"> · райони й жовтий рівень — з токеном alerts.in.ua</span> : null}
+          {!apiProblem && A.mode !== 'detail' ? <span className="hint"> · райони й жовтий рівень — з токеном alerts.in.ua</span> : null}
         </span>
         <span className="right">
-          {A.mode ? 'оновлено ' + hhmm(new Date()) : lastGood ? 'дані на ' + hhmm(lastGood.t) : "немає зв'язку"}
+          {A.mode ? (A.mode === 'detail' ? 'alerts.in.ua · ' : '') + 'оновлено ' + hhmm(new Date()) : lastGood ? 'дані на ' + hhmm(lastGood.t) : "немає зв'язку"}
           <span className="ctl">
             {Object.keys(SIZES).map(k => <button key={k} data-k={k} className={'sz' + (k === size ? ' on' : '')} onClick={e => setSize(k, e)}>{k}</button>)}
             <button className="sz" title="Повернути на місце" onClick={resetPos}>↺</button>
@@ -491,6 +510,8 @@ export const className = `
   .sz-S .chip { font-size: 10px; padding: 2px 7px; }
   .sz-S .foot { font-size: 9.5px; }
   .sz-S .foot > span:first-child { display: none; }
+  .apiwarn { font-size: 11px; color: #f0bd3a; margin: 0 0 4px; }
+  .sz-S .apiwarn { font-size: 10px; }
   .sz-S .foot { justify-content: flex-end; }
   .sz-S .tg .n { font-size: 20px; }
 `
