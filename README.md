@@ -25,8 +25,11 @@
 
 ## Встановлення
 
-1. Встановіть [Übersicht](https://tracesof.net/uebersicht/) і увімкніть «Launch Übersicht when I login».
-2. Скопіюйте папку `alerts-map.widget` у `~/Library/Application Support/Übersicht/widgets/`.
+1. Отримайте безкоштовний токен API: заповніть форму на [alerts.in.ua/api-request](https://alerts.in.ua/api-request) — токен прийде на пошту.
+2. Двічі клацніть `tools/setup.command`: він збереже токен у `~/.config/ua-alerts/token` (доступ лише вам,
+   у репозиторій токен не потрапляє), встановить Übersicht, якщо треба, і скопіює віджет.
+   Вручну: скопіюйте `alerts-map.widget` у `~/Library/Application Support/Übersicht/widgets/`.
+3. У меню Übersicht увімкніть «Launch Übersicht when I login».
 3. Якщо віджет зник — перевірте, що Übersicht запущений (іконка в меню-барі), і поставте галочку
    біля `alerts-map` у меню Übersicht → Widgets.
 
@@ -35,7 +38,8 @@
 | Параметр | Що робить |
 |---|---|
 | `HOME` | ваша область |
-| `ALERTS_IN_UA_TOKEN` | токен з [alerts.in.ua/api-request](https://alerts.in.ua/api-request) — райони, громади, жовтий рівень, типи загроз |
+| токен | не в коді: файл `~/.config/ua-alerts/token` (створює `tools/setup.command`) |
+| `API_MIN_SECONDS` | мінімальна пауза між запитами до alerts.in.ua (8 с; ліміт API — 8–10 запитів/хв) |
 | `CHANNELS` | Telegram-канали моніторингу |
 | `THREAT_MINUTES` | скільки хвилин показувати ціль |
 | `DEFAULT_SIZE` | S (за замовчуванням), M, L або XL |
@@ -49,8 +53,10 @@
 
 ## Джерела даних
 
-- Тривоги по областях: [ubilling.net.ua/aerialalerts](https://ubilling.net.ua/aerialalerts/) (без токена).
-- Детальні тривоги та загрози: [alerts.in.ua API](https://devs.alerts.in.ua/) (токен, ліміт ~8–10 запитів/хв).
+- Основне джерело — [alerts.in.ua API](https://devs.alerts.in.ua/) `/v1/alerts/active.json`: області, райони, громади, міста,
+  рівні (червоний/жовтий) і типи загроз. Запити кешуються і йдуть з `If-Modified-Since`, тож дані завантажуються лише коли змінились.
+  Якщо токен недійсний (401) або перевищено ліміт (429), віджет пише про це і переходить на резервне джерело.
+- Резервне джерело (без токена): [ubilling.net.ua/aerialalerts](https://ubilling.net.ua/aerialalerts/) — лише області.
 - Цілі: публічні Telegram-канали моніторингу.
 - Межі: [OCHA COD-AB Ukraine](https://data.humdata.org/dataset/cod-ab-ukr) (CC BY-IGO); населені пункти:
   [GeoNames](https://www.geonames.org/) (CC BY 4.0).
