@@ -40,9 +40,28 @@ const apiCmd = `T=$(tr -d '[:space:]' 2>/dev/null < "${TOKEN_FILE}"); ` +
   `if [ "$c" = 200 ] || [ "$c" = 304 ]; then echo '###DETAIL'; cat "$f" 2>/dev/null; echo; fi; ` +
   `else echo '###STATUS notoken'; fi`
 
+// Історія за місяць для домашньої області: окремий ліміт API (2 запити/хв), тому оновлюємо раз на 10 хв
+const OBL_UID = { 'Хмельницька область': 3, 'Вінницька область': 4, 'Рівненська область': 5, 'Волинська область': 8,
+  'Дніпропетровська область': 9, 'Житомирська область': 10, 'Закарпатська область': 11, 'Запорізька область': 12,
+  'Івано-Франківська область': 13, 'Київська область': 14, 'Кіровоградська область': 15, 'Луганська область': 16,
+  'Миколаївська область': 17, 'Одеська область': 18, 'Полтавська область': 19, 'Сумська область': 20,
+  'Тернопільська область': 21, 'Харківська область': 22, 'Херсонська область': 23, 'Черкаська область': 24,
+  'Чернігівська область': 25, 'Чернівецька область': 26, 'Львівська область': 27, 'Донецька область': 28,
+  'Автономна Республіка Крим': 29, 'м. Севастополь': 30, 'м. Київ': 31 }
+const HIST_SECONDS = 600
+const histCmd = OBL_UID[HOME] ? `T=$(tr -d '[:space:]' 2>/dev/null < "${TOKEN_FILE}"); ` +
+  `if [ -n "$T" ]; then D=/tmp/ua-alerts-api; mkdir -p "$D"; h="$D/hist.json"; ` +
+  `age=$(( $(date +%s) - $(stat -f %m "$h" 2>/dev/null || echo 0) )); ` +
+  `if [ "$age" -ge ${HIST_SECONDS} ]; then touch "$h"; ` +
+  `curl -s -m 10 -o "$h.new" -w '' -H "Authorization: Bearer $T" -H 'Accept: application/json' ` +
+  `'https://api.alerts.in.ua/v1/regions/${OBL_UID[HOME]}/alerts/month_ago.json'; ` +
+  `if grep -q '"alerts"' "$h.new" 2>/dev/null; then mv "$h.new" "$h"; else rm -f "$h.new"; fi; fi; ` +
+  `echo '###HIST'; cat "$h" 2>/dev/null; echo; fi` : ''
+
 export const command = [
   `echo '###ALERTS'; curl -s -m 8 'https://ubilling.net.ua/aerialalerts/'; echo`,
   apiCmd,
+  histCmd,
   ...CHANNELS.map(tgCmd),
 ].filter(Boolean).join('; ')
 
@@ -57,6 +76,37 @@ const HOME_IDX = OBL_INDEX[HOME]
 const shortObl = n => n === 'Автономна Республіка Крим' ? 'АР Крим' : n.replace(' область', '')
 const RAY_INDEX = {}
 GEO.R.forEach((r, i) => { RAY_INDEX[r.o + '|' + r.n.toLowerCase()] = i })
+// API може віддавати старі назви районів — зводимо до назв з карти
+const RAY_ALIAS = { 'червоноградський': 'шептицький' }
+// межі контуру (шляхи в GEO містять лише M, l, z)
+const pathBox = d => {
+  let x = 0, y = 0, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9
+  const upd = () => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y }
+  for (const m of d.matchAll(/([Mlz])([^Mlz]*)/g)) {
+    const n = (m[2].match(/-?\d+(?:\.\d+)?/g) || []).map(Number)
+    if (m[1] === 'M') { x = n[0]; y = n[1]; upd() }
+    else if (m[1] === 'l') for (let i = 0; i + 1 < n.length; i += 2) { x += n[i]; y += n[i + 1]; upd() }
+  }
+  return { x0, y0, x1, y1 }
+}
+// ВИД ОБЛАСТІ: коли в HOME є тривога, карта наближається до неї (той самий формат кадру, щоб віджет не міняв розмір)
+const homeView = (() => {
+  if (HOME_IDX == null) return null
+  const b = pathBox(GEO.O[HOME_IDX].d)
+  let w = b.x1 - b.x0 + 20, h = b.y1 - b.y0 + 20
+  const asp = GEO.W / GEO.H
+  if (w / h < asp) w = h * asp; else h = w / asp
+  return { x: (b.x0 + b.x1) / 2 - w / 2, y: (b.y0 + b.y1) / 2 - h / 2, w, h }
+})()
+const RAY_MID = {}
+// підпис району — по центру найбільшого контуру (без анклавів)
+GEO.R.forEach((r, i) => {
+  if (r.o !== HOME_IDX) return
+  let best = null
+  r.d.split('z').filter(x => x.trim()).forEach(sub => { const b = pathBox(sub.trim()); const a = (b.x1 - b.x0) * (b.y1 - b.y0); if (!best || a > best.a) best = { a, b } })
+  const nudge = { 'Дрогобицький': [3, -10], 'Самбірський': [-4, 2] }[r.n] || [0, 0]   // розвести підписи, що налазять
+  RAY_MID[i] = [(best.b.x0 + best.b.x1) / 2 + nudge[0], (best.b.y0 + best.b.y1) / 2 + nudge[1]]
+})
 const HROM_INDEX = {}
 GEO.Hm.forEach((h, i) => { HROM_INDEX[GEO.R[h.r].o + '|' + h.n.toLowerCase()] = i })
 
@@ -240,7 +290,7 @@ const THREAT_LABEL = {
 }
 
 const parseAlerts = (ub, det) => {
-  const obl = {}, ray = {}, hrom = {}, threats = {}
+  const obl = {}, ray = {}, hrom = {}, threats = {}, since = {}
   let mode = null
   if (det && Array.isArray(det.alerts)) {
     mode = 'detail'
@@ -249,10 +299,11 @@ const parseAlerts = (ub, det) => {
       if (oi == null) continue
       const L = a.alert_type === 'air_raid' ? lvl(a) : 'R'
       const title = (a.location_title || '').toLowerCase()
-      if (a.location_type === 'oblast' || OBL_INDEX[a.location_title] != null) up(obl, oi, L)
+      if (a.location_type === 'oblast' || OBL_INDEX[a.location_title] != null) { up(obl, oi, L); if (a.started_at && (!since['o' + oi] || a.started_at < since['o' + oi])) since['o' + oi] = a.started_at }
       else if (a.location_type === 'raion') {
-        const ri = RAY_INDEX[oi + '|' + title.replace(/ район$/, '')]
-        if (ri != null) up(ray, ri, L)
+        const rn = title.replace(/ район$/, '')
+        const ri = RAY_INDEX[oi + '|' + (RAY_ALIAS[rn] || rn)]
+        if (ri != null) { up(ray, ri, L); if (a.started_at && (!since['r' + ri] || a.started_at < since['r' + ri])) since['r' + ri] = a.started_at }
       } else if (a.location_type === 'hromada') {
         const hi = HROM_INDEX[oi + '|' + title.replace(/ (територіальна|міська|селищна|сільська) громада$/, '').replace(/ громада$/, '')]
         if (hi != null) up(hrom, hi, L)
@@ -276,12 +327,12 @@ const parseAlerts = (ub, det) => {
     }
     if (obl[OBL_INDEX['м. Севастополь']]) obl[OBL_INDEX['Автономна Республіка Крим']] = 'R'
   }
-  return { obl, ray, hrom, threats, mode }
+  return { obl, ray, hrom, threats, mode, since }
 }
 
 // ----- іконки загроз (вершина вгору = на північ) -----
 const ICON = {
-  drone: 'M0-11L10 5 3 3 0 8-3 3-10 5Z',
+  drone: 'M0 -14.5L1 -10.5L1.2 -5.5L10.2 9L11.4 9.2L11.4 13L9.9 13L9.4 11.4L1.3 10.2L1.2 13.2L2.7 13.4L2.7 14.6L-2.7 14.6L-2.7 13.4L-1.2 13.2L-1.3 10.2L-9.4 11.4L-9.9 13L-11.4 13L-11.4 9.2L-10.2 9L-1.2 -5.5L-1 -10.5Z',   // «Шахед»: дельтоподібне крило, шайби на кінцях, гвинт ззаду
   jet: 'M0-12L3-4 10 3 10 6 2 3 2 7 5 10-5 10-2 7-2 3-10 6-10 3-3-4Z',
   missile: 'M0-12L2.5-7 2.5 5 6 10-6 10-2.5 5-2.5-7Z',
   ballistic: 'M0-13L3-8 3 6 6 11-6 11-3 6-3-8Z',
@@ -323,6 +374,27 @@ const LABEL_FIX = { 'Хмельницька область': [12, 28], 'Терн
   'Черкаська область': [0, 12], 'Вінницька область': [0, 8] }
 const labelXY = o => { const f = LABEL_FIX[o.n] || [0, 0]; return [o.c[0] + f[0], o.c[1] + f[1]] }
 
+// статистика за місяць із /v1/regions/{uid}/alerts/month_ago.json
+const parseHist = hist => {
+  if (!hist || !Array.isArray(hist.alerts)) return null
+  if (!hist.alerts.length) return { empty: true }
+  const uid = String(OBL_UID[HOME])
+  // усі повітряні тривоги в області: і на всю область, і по районах, громадах, містах
+  const mine = hist.alerts.filter(a => a.started_at && (!a.alert_type || a.alert_type === 'air_raid') &&
+    (String(a.location_oblast_uid) === uid || String(a.location_uid) === uid || a.location_oblast === HOME))
+  if (!mine.length) return { n: 0, got: hist.alerts.length }
+  const now = Date.now()
+  const iv = mine.map(a => [Date.parse(a.started_at), a.finished_at ? Date.parse(a.finished_at) : now]).filter(x => !isNaN(x[0]) && !isNaN(x[1]) && x[1] > x[0]).sort((a, b) => a[0] - b[0])
+  const merged = []   // перекриті інтервали зливаємо в один епізод
+  for (const x of iv) { const l = merged[merged.length - 1]; if (l && x[0] <= l[1]) l[1] = Math.max(l[1], x[1]); else merged.push([x[0], x[1]]) }
+  const done = mine.filter(a => a.finished_at).map(a => Date.parse(a.finished_at)).filter(x => !isNaN(x))
+  return { n: merged.length, hours: merged.reduce((t, x) => t + (x[1] - x[0]), 0) / 3600000, last: done.length ? Math.max(...done) : null }
+}
+const ago = t => {
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000))
+  return m < 60 ? m + ' хв' : m < 1440 ? Math.floor(m / 60) + ' год ' + (m % 60) + ' хв' : Math.floor(m / 1440) + ' д'
+}
+
 const hhmm = d => d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
 
 // ----- рендер -----
@@ -330,6 +402,7 @@ export const render = ({ output }) => {
   const out = output || ''
   const ub = tryJSON(section(out, 'ALERTS') || '')
   const det = tryJSON(section(out, 'DETAIL') || '')
+  const hist = parseHist(tryJSON(section(out, 'HIST') || ''))
   const stm = out.match(/###STATUS (\S*)/)
   const apiStatus = stm ? stm[1] : 'notoken'
   const apiProblem = apiStatus === 'notoken' ? null : apiStatus === '401' || apiStatus === '403' ? 'alerts.in.ua: токен недійсний'
@@ -348,6 +421,11 @@ export const render = ({ output }) => {
   const homeThreat = targets.filter(t => t.o === HOME_IDX)
 
   const oblAlert = i => A.obl[i] || null
+  const zoom = !!(homeState && homeView)       // тривога в області → показуємо лише її з районами
+  const vb = zoom ? `${homeView.x} ${homeView.y} ${homeView.w} ${homeView.h}` : `0 0 ${GEO.W} ${GEO.H}`
+  const kz = zoom ? homeView.w / GEO.W : 1      // масштаб значків цілей
+  const inView = xy => !zoom || (xy[0] > homeView.x && xy[0] < homeView.x + homeView.w && xy[1] > homeView.y && xy[1] < homeView.y + homeView.h)
+  const pxUnit = zoom ? homeView.w / (SIZES[store.get('size2', DEFAULT_SIZE)] || SIZES.S) : 1   // одиниць карти в одному пікселі
   const oblLevel = {}
   const bump = (o, v) => { if (oblLevel[o] !== 'R') oblLevel[o] = v }
   Object.entries(A.obl).forEach(([i, v]) => { if (+i !== OBL_INDEX['м. Севастополь']) bump(+i, v) })
@@ -392,8 +470,8 @@ export const render = ({ output }) => {
         </div>
       </div>
 
-      <svg viewBox={`0 0 ${GEO.W} ${GEO.H}`} className="map">
-        <g className="ray">{GEO.R.map((r, i) => <path key={i} d={r.d} />)}</g>
+      <svg viewBox={vb} className={'map' + (zoom ? ' zoom' : '')}>
+        <g className="ray">{GEO.R.map((r, i) => <path key={i} d={r.d} className={r.o === HOME_IDX ? 'hr' : 'ox'} />)}</g>
         <g className="alerts">
           {Object.entries(A.obl).map(([i, v]) => <path key={'o' + i} d={GEO.O[i].d} fill={fillOf(v)} />)}
           {Object.entries(A.ray).filter(([i]) => !oblAlert(GEO.R[i].o)).map(([i, v]) => <path key={'r' + i} d={GEO.R[i].d} fill={fillOf(v)} />)}
@@ -401,20 +479,28 @@ export const render = ({ output }) => {
         </g>
         <g className="obl">{GEO.O.map((o, i) => <path key={i} d={o.d} />)}</g>
         {HOME_IDX != null ? <path className="home" d={GEO.O[HOME_IDX].d} /> : null}
-        <g className="labels">
-          {GEO.O.map((o, i) => o.n.startsWith('м. ') ? null :
-            <text key={i} x={labelXY(o)[0]} y={labelXY(o)[1]}>{shortObl(o.n)}</text>)}
-          <text x={GEO.O[OBL_INDEX['м. Київ']].c[0] + 4} y={GEO.O[OBL_INDEX['м. Київ']].c[1] - 9} className="city">м. Київ</text>
-        </g>
+        {zoom ? (
+          <g className="labels rl">
+            {Object.entries(RAY_MID).map(([i, c]) => <text key={i} x={c[0]} y={c[1]} style={{ fontSize: 9 * pxUnit, strokeWidth: 2.5 * pxUnit }}>{GEO.R[i].n}</text>)}
+          </g>
+        ) : (
+          <g className="labels">
+            {GEO.O.map((o, i) => o.n.startsWith('м. ') ? null :
+              <text key={i} x={labelXY(o)[0]} y={labelXY(o)[1]}>{shortObl(o.n)}</text>)}
+            <text x={GEO.O[OBL_INDEX['м. Київ']].c[0] + 4} y={GEO.O[OBL_INDEX['м. Київ']].c[1] - 9} className="city">м. Київ</text>
+          </g>
+        )}
         <g className="targets">
-          {targets.map((t, i) => {
+          {targets.filter(t => inView(t.xy)).map((t, i) => {
             const age = (now - t.t) / 60000
             const op = Math.max(0.35, 1 - age / THREAT_MINUTES)
             return (
-              <g key={i} transform={`translate(${t.xy[0]} ${t.xy[1]})`} opacity={op} className={'tg ' + t.kind}>
+              <g key={i} transform={`translate(${t.xy[0]} ${t.xy[1]}) scale(${kz})`} opacity={op} className={'tg ' + t.kind}>
                 <title>{`${KINDS[t.kind].label}: ${t.place} · ${hhmm(t.t)} (@${t.ch})\n${t.text}`}</title>
                 {t.head == null ? <circle r={size === 'S' ? 22 : 15} className="halo" /> : null}
-                <g transform={`rotate(${t.head == null ? 0 : t.head}) scale(${size === 'S' ? 2.3 : 1.55})`}><path d={ICON[t.kind]} /></g>
+                <g transform={`rotate(${t.head == null ? 0 : t.head}) scale(${size === 'S' ? 2.3 : 1.55})`}>
+                  <path d={ICON[t.kind]} />
+                </g>
                 {t.n > 1 ? <text x="13" y="-9" className="n">{t.n}</text> : null}
               </g>
             )
@@ -427,6 +513,14 @@ export const render = ({ output }) => {
           <span key={i} className={'chip ' + (r.level === 'red' ? 'cr' : 'cy')}>{r.label} <i>{r.extra}</i></span>)
           : <span className="chip calmchip">Активних загроз у моніторингу немає</span>}
       </div>
+
+      {hist ? (
+        <div className="hist">
+          {hist.empty ? 'Історія за 30 днів: API повернув порожній список (не означає, що тривог не було)' :
+            hist.n === 0 ? 'Історія за 30 днів: записів по ' + HOME_LABEL + ' не знайдено серед ' + hist.got + ' отриманих' :
+            'За 30 днів: ' + hist.n + ' епізодів тривоги · ' + Math.round(hist.hours) + ' год' + (hist.last && !homeObl ? ' · остання завершилась ' + ago(hist.last) + ' тому' : '')}
+        </div>
+      ) : null}
 
       {apiProblem ? <div className="apiwarn">⚠︎ {apiProblem}{A.mode === 'oblast' ? ' — показую лише області' : ''}</div> : null}
       <div className="foot">
@@ -469,17 +563,21 @@ export const className = `
   .sum b.r { color: #ff6b62; } .sum b.y { color: #f0bd3a; }
 
   .map { width: 100%; display: block; }
-  .ray path { fill: var(--land); stroke: var(--edge); stroke-width: .6; }
+  .ray path { fill: var(--land); stroke: none; }
+  .map.zoom .ray path.hr { stroke: rgba(255,255,255,0.75); stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .map.zoom .ray path.ox { fill: #222a36; }
+  .sz-S .labels.rl { display: none; }
+  .map.zoom .obl path, .map.zoom .home { stroke-width: 1.6px; vector-effect: non-scaling-stroke; }
   .alerts path { stroke: none; opacity: .95; }
   .obl path { fill: none; stroke: #11161e; stroke-width: 2; stroke-linejoin: round; }
-  .home { fill: none; stroke: rgba(255,255,255,0.85); stroke-width: 2.4; stroke-linejoin: round; }
+  .home { fill: none; stroke: #11161e; stroke-width: 2; stroke-linejoin: round; }
   .labels text { fill: #f1f4f8; font-size: 15px; font-weight: 500; text-anchor: middle; dominant-baseline: middle;
     paint-order: stroke; stroke: rgba(10,14,20,0.55); stroke-width: 3px; }
   .labels text.city { font-size: 12px; text-anchor: start; }
   .tg path { fill: #fff; stroke: #0b0f15; stroke-width: 1.3; stroke-linejoin: round; }
   .tg.missile path, .tg.ballistic path { fill: #ff6b62; }
   .tg.kab path { fill: #ffb347; }
-  .tg .halo { fill: rgba(255,255,255,0.12); stroke: rgba(255,255,255,0.5); stroke-dasharray: 3 3; }
+  .tg .halo { fill: rgba(255,255,255,0.14); stroke: none; }
   .tg .n { fill: #fff; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: #0b0f15; stroke-width: 3px; }
 
   .threats { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 6px; }
